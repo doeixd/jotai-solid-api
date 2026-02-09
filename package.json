@@ -1,6 +1,6 @@
 {
   "name": "jotai-solid-api",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Solid-style reactive API on top of Jotai for React component wrappers",
   "type": "module",
   "main": "dist/index.js",
