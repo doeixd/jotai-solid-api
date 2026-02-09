@@ -1851,10 +1851,7 @@ export const defineComponent = component;
 export type MaybeAccessor<T> = T | Accessor<T>;
 
 function readMaybeAccessor<T>(value: MaybeAccessor<T>): T {
-  if (typeof value === "function") {
-    return (value as Accessor<T>)();
-  }
-  return value;
+  return resolveMaybeAccessor(value);
 }
 
 /**
@@ -2036,6 +2033,63 @@ export type SwitchProps = {
   /** Match branches (typically Match components). */
   children?: React.ReactNode;
 };
+
+/**
+ * Type guard for accessors.
+ *
+ * @param value Value to check.
+ * @returns `true` when value is an accessor function.
+ *
+ * @example
+ * ```ts
+ * if (isAccessor(value)) {
+ *   console.log(value())
+ * }
+ * ```
+ */
+export function isAccessor<T = unknown>(value: unknown): value is Accessor<T> {
+  return typeof value === "function";
+}
+
+/**
+ * Resolves plain values or accessors into a value.
+ *
+ * @param value Plain value or accessor.
+ * @returns Resolved value.
+ *
+ * @example
+ * ```ts
+ * const enabled = resolveMaybeAccessor(props.enabled)
+ * ```
+ */
+export function resolveMaybeAccessor<T>(value: MaybeAccessor<T>): T {
+  return isAccessor<T>(value) ? value() : value;
+}
+
+/**
+ * Alias for {@link resolveMaybeAccessor}.
+ */
+export const toValue = resolveMaybeAccessor;
+
+/**
+ * Creates a keyed selector helper for efficient equality checks.
+ *
+ * @param source Source accessor containing the selected value.
+ * @param equals Optional comparison function. Defaults to `Object.is`.
+ * @returns Function that compares keys to the current source value.
+ *
+ * @example
+ * ```ts
+ * const isSelected = createSelector(selectedId)
+ * const active = isSelected(row.id)
+ * ```
+ */
+export function createSelector<T>(
+  source: Accessor<T>,
+  equals: (left: T, right: T) => boolean = Object.is,
+): (key: T) => boolean {
+  return (key: T): boolean => equals(source(), key);
+}
 
 /**
  * Renders the first truthy {@link Match}, else `fallback`.

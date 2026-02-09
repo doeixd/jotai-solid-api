@@ -21,6 +21,9 @@ npm install jotai-solid-api jotai react
 - `onMount(callback)`
 - `onCleanup(cleanup)` / `cleanup(cleanup)`
 - `batch(fn)`
+- `createSelector(source, equals?)`
+- `resolveMaybeAccessor(value)` / `toValue(value)`
+- `isAccessor(value)`
 - `createResource(fetcher)`
 - `createResource(source, fetcher)`
 - `createAsync(compute)`

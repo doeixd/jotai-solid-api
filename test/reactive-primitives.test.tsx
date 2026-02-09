@@ -14,6 +14,7 @@ import {
   createLinkedSignal,
   createMemo,
   createResource,
+  createSelector,
   createSignal,
   effect,
   fromSignal,
@@ -21,9 +22,12 @@ import {
   linkedSignal,
   memo,
   mount,
+  isAccessor,
   onMount,
   onCleanup,
+  resolveMaybeAccessor,
   signal,
+  toValue,
   toSignal,
   toSolidSignal,
   untrack,
@@ -540,5 +544,34 @@ describe("reactive primitives", () => {
     expect(() => createSignal(1)).toThrow("No active reactive scope");
     expect(() => createMemo(() => 1)).toThrow("No active reactive scope");
     expect(() => createEffect(() => {})).toThrow("No active reactive scope");
+  });
+
+  it("supports selector and accessor utility helpers", () => {
+    const App = component(() => {
+      const [selected, setSelected] = createSignal("a");
+      const isSelected = createSelector(selected);
+
+      return () => (
+        <div>
+          <button data-testid="set-b" onClick={() => setSelected("b")}>b</button>
+          <span data-testid="is-a">{String(isSelected("a"))}</span>
+          <span data-testid="is-b">{String(isSelected("b"))}</span>
+        </div>
+      );
+    });
+
+    render(<App />);
+    expect(screen.getByTestId("is-a").textContent).toBe("true");
+    expect(screen.getByTestId("is-b").textContent).toBe("false");
+
+    fireEvent.click(screen.getByTestId("set-b"));
+    expect(screen.getByTestId("is-a").textContent).toBe("false");
+    expect(screen.getByTestId("is-b").textContent).toBe("true");
+
+    expect(isAccessor(() => 1)).toBe(true);
+    expect(isAccessor(1)).toBe(false);
+    expect(resolveMaybeAccessor(2)).toBe(2);
+    expect(resolveMaybeAccessor(() => 3)).toBe(3);
+    expect(toValue(() => 4)).toBe(4);
   });
 });
