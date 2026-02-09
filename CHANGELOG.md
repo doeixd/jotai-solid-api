@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/doeixd/jotai-solid-api/compare/v1.1.0...v1.2.0) (2026-02-09)
+
+
+### Features
+
+* add deferred, props, and structural update primitives ([92cd948](https://github.com/doeixd/jotai-solid-api/commit/92cd94866d16bc6938f4fe29b4afe38a5cfc43af))
+
 ## [1.1.0](https://github.com/doeixd/jotai-solid-api/compare/v1.0.0...v1.1.0) (2026-02-09)
 
 
