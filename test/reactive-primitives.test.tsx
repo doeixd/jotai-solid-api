@@ -540,10 +540,13 @@ describe("reactive primitives", () => {
     expect(screen.getByTestId("solid-value-alias").textContent).toBe("5");
   });
 
-  it("throws when reactive primitives are called outside component scope", () => {
-    expect(() => createSignal(1)).toThrow("No active reactive scope");
-    expect(() => createMemo(() => 1)).toThrow("No active reactive scope");
-    expect(() => createEffect(() => {})).toThrow("No active reactive scope");
+  it("allows primitives outside components via global scope", () => {
+    const [value, setValue] = createSignal(1);
+    const doubled = createMemo(() => value() * 2);
+
+    expect(doubled()).toBe(2);
+    setValue(3);
+    expect(doubled()).toBe(6);
   });
 
   it("supports selector and accessor utility helpers", () => {

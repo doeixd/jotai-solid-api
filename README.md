@@ -20,6 +20,7 @@ npm install jotai-solid-api jotai react
 - `createComputed(compute)`
 - `onMount(callback)`
 - `onCleanup(cleanup)` / `cleanup(cleanup)`
+- `createRoot(init)`
 - `batch(fn)`
 - `createSelector(source, equals?)`
 - `resolveMaybeAccessor(value)` / `toValue(value)`
@@ -144,6 +145,9 @@ export const App = component(() => {
 ## Notes
 
 - `setup` runs once per component instance, and should return a render function (`() => ReactNode`).
+- Primitives also work outside components using a default global reactive scope.
+- Use `createRoot(...)` when you need an isolated disposable non-React scope.
+- For SSR, avoid implicit globals: create primitives inside components or inside `createRoot(...)` per request.
 - Reads inside the render function are tracked and trigger rerenders.
 - Reads inside `createMemo` and effects are tracked and rerun when dependencies change.
 - `createStore` is immutable-by-default (`setStore` updates), while `createMutable` and `createReactiveArray` allow direct mutation.

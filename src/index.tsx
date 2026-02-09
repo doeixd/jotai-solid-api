@@ -104,8 +104,13 @@ class Scope {
   private readonly scopeCleanups = new Set<Cleanup>();
   private readonly layoutStarters: Array<() => void> = [];
   private readonly effectStarters: Array<() => void> = [];
-  private layoutStarted = false;
-  private effectsStarted = false;
+  private layoutStarted: boolean;
+  private effectsStarted: boolean;
+
+  constructor(options: { autoStart?: boolean } = {}) {
+    this.layoutStarted = Boolean(options.autoStart);
+    this.effectsStarted = Boolean(options.autoStart);
+  }
 
   register(disposable: { dispose(): void }): void {
     this.disposables.add(disposable);
@@ -167,6 +172,18 @@ class Scope {
 }
 
 const scopeStack: Scope[] = [];
+let globalScope: Scope | null = null;
+
+function isServerRuntime(): boolean {
+  return typeof window === "undefined";
+}
+
+function getGlobalScope(): Scope {
+  if (!globalScope) {
+    globalScope = new Scope({ autoStart: true });
+  }
+  return globalScope;
+}
 
 function withScope<T>(scope: Scope, fn: () => T): T {
   scopeStack.push(scope);
@@ -179,12 +196,17 @@ function withScope<T>(scope: Scope, fn: () => T): T {
 
 function activeScope(): Scope {
   const scope = scopeStack[scopeStack.length - 1];
-  if (!scope) {
+  if (scope) {
+    return scope;
+  }
+
+  if (isServerRuntime()) {
     throw new Error(
-      "No active reactive scope. Wrap your component with component(...) before calling reactive APIs.",
+      "No active reactive scope in SSR context. Wrap primitive creation in createRoot(...) per request to avoid cross-request global state leaks.",
     );
   }
-  return scope;
+
+  return getGlobalScope();
 }
 
 class SignalSource<T> implements Subscribable {
@@ -409,6 +431,21 @@ export type SolidSetter<T> = (nextValue: T | ((prev: T) => T)) => unknown;
  * ```
  */
 export type SolidSignal<T> = readonly [Accessor<T>, SolidSetter<T>];
+
+/**
+ * Falsy values in JavaScript conditional checks.
+ */
+export type Falsy = false | 0 | 0n | "" | null | undefined;
+
+/**
+ * Removes JavaScript-falsy values from a type.
+ *
+ * @example
+ * ```ts
+ * type T = Truthy<string | null | ""> // string
+ * ```
+ */
+export type Truthy<T> = Exclude<T, Falsy>;
 
 /**
  * Async resource lifecycle states.
@@ -698,7 +735,7 @@ export function onMount(callback: () => void | Cleanup): void {
 export const mount = onMount;
 
 /**
- * Registers cleanup in setup scope or currently running effect.
+ * Registers cleanup in the current effect, active setup scope, or default global scope.
  *
  * @param cleanup Cleanup callback invoked on re-run or scope disposal.
  *
@@ -716,13 +753,7 @@ export function onCleanup(cleanup: Cleanup): void {
     return;
   }
 
-  const scope = scopeStack[scopeStack.length - 1];
-  if (scope) {
-    scope.registerCleanup(cleanup);
-    return;
-  }
-
-  throw new Error("onCleanup must run inside component setup or an effect.");
+  activeScope().registerCleanup(cleanup);
 }
 
 /**
@@ -734,6 +765,34 @@ export function onCleanup(cleanup: Cleanup): void {
  * ```
  */
 export const cleanup = onCleanup;
+
+/**
+ * Creates an isolated reactive scope and returns a disposal handle.
+ *
+ * @param init Initializer executed inside the new scope.
+ * @returns Return value of `init`.
+ *
+ * @example
+ * ```ts
+ * const value = createRoot((dispose) => {
+ *   const [count, setCount] = createSignal(0)
+ *   return { count, setCount, dispose }
+ * })
+ * ```
+ */
+export function createRoot<T>(init: (dispose: () => void) => T): T {
+  const scope = new Scope({ autoStart: true });
+  let disposed = false;
+  const dispose = (): void => {
+    if (disposed) {
+      return;
+    }
+    disposed = true;
+    scope.dispose();
+  };
+
+  return withScope(scope, () => init(dispose));
+}
 
 /**
  * Batches reactive notifications and flushes once at the end.
@@ -1864,13 +1923,13 @@ function readMaybeAccessor<T>(value: MaybeAccessor<T>): T {
  */
 export type ShowProps<T> = {
   /** Condition value (or accessor). Truthy renders children, falsy renders fallback. */
-  when: MaybeAccessor<T | null | undefined | false>;
+  when: MaybeAccessor<T | Falsy>;
   /** Content rendered when `when` is falsy. */
   fallback?: React.ReactNode;
   /** Reserved compatibility flag for Solid-style signatures. */
   keyed?: boolean;
   /** Render content or render function receiving narrowed truthy value. */
-  children: React.ReactNode | ((value: NonNullable<T>) => React.ReactNode);
+  children: React.ReactNode | ((value: Truthy<T>) => React.ReactNode);
 };
 
 /**
@@ -1891,8 +1950,8 @@ export function Show<T>(props: ShowProps<T>): React.ReactNode {
   }
 
   if (typeof props.children === "function") {
-    return (props.children as (value: NonNullable<T>) => React.ReactNode)(
-      value as NonNullable<T>,
+    return (props.children as (value: Truthy<T>) => React.ReactNode)(
+      value as Truthy<T>,
     );
   }
 
@@ -1999,9 +2058,9 @@ export function Index<T>(props: IndexProps<T>): React.ReactNode {
  */
 export type MatchProps<T> = {
   /** Match condition (or accessor). First truthy Match is selected by Switch. */
-  when: MaybeAccessor<T | null | undefined | false>;
+  when: MaybeAccessor<T | Falsy>;
   /** Render content or render function receiving narrowed truthy match value. */
-  children: React.ReactNode | ((value: NonNullable<T>) => React.ReactNode);
+  children: React.ReactNode | ((value: Truthy<T>) => React.ReactNode);
 };
 
 /**
