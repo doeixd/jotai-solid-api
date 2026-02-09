@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/doeixd/jotai-solid-api/compare/v1.0.0...v1.1.0) (2026-02-09)
+
+
+### Features
+
+* **ssr:** add safe global scope defaults and createRoot isolation ([b7ef501](https://github.com/doeixd/jotai-solid-api/commit/b7ef501824ab40dd0616521f3c211dd073df727e))
+
 ## 1.0.0 (2026-02-09)
 
 
