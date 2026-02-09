@@ -1,0 +1,53 @@
+{
+  "name": "jotai-solid-api",
+  "version": "0.1.0",
+  "description": "Solid-style reactive API on top of Jotai for React component wrappers",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run clean && npm run build && npm test",
+    "release:cut": "node ./scripts/cut-release.mjs",
+    "release:patch": "npm run release:cut -- patch",
+    "release:minor": "npm run release:cut -- minor",
+    "release:major": "npm run release:cut -- major"
+  },
+  "keywords": [
+    "jotai",
+    "solid",
+    "react",
+    "signals",
+    "state"
+  ],
+  "author": "",
+  "license": "MIT",
+  "peerDependencies": {
+    "jotai": "^2.17.1",
+    "react": "^19.2.4"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.2.13",
+    "@types/react-dom": "^19.2.3",
+    "jsdom": "^28.0.0",
+    "react-dom": "^19.2.4",
+    "rimraf": "^6.1.2",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}
