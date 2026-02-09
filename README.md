@@ -12,6 +12,8 @@ npm install jotai-solid-api jotai react
 
 - `component(setup, { memo?, displayName? })`
 - `createSignal(initial)`
+- `fromSolidSignal(signal)` / `toSolidSignal(signal)`
+- `fromSignal(signal)` / `toSignal(signal)`
 - `createMemo(compute)`
 - `createEffect(effect)`
 - `createLayoutEffect(effect)`
@@ -32,6 +34,13 @@ npm install jotai-solid-api jotai react
 - `lazy(loader)` / `Suspense`
 - `untrack(fn)`
 - control flow: `Show`, `For`, `Index`, `Switch`, `Match`
+
+### Aliases
+
+- Primitives: `signal`, `memo`, `effect`, `layoutEffect`, `computed`, `mount`
+- Async: `resource`, `asyncSignal`
+- Stores/projections: `store`, `sotre`, `mutable`, `projection`, `arrayProjection`
+- Components: `defineComponent`
 
 ## Example
 

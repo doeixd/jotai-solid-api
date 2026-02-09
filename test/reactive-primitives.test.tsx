@@ -5,6 +5,7 @@ import {
   Suspense,
   batch,
   cleanup as onCleanupAlias,
+  computed,
   component,
   createComputed,
   createAsync,
@@ -14,9 +15,17 @@ import {
   createMemo,
   createResource,
   createSignal,
+  effect,
+  fromSignal,
+  fromSolidSignal,
   linkedSignal,
+  memo,
+  mount,
   onMount,
   onCleanup,
+  signal,
+  toSignal,
+  toSolidSignal,
   untrack,
   use,
 } from "../src/index";
@@ -434,6 +443,97 @@ describe("reactive primitives", () => {
 
     render(<App />);
     expect(screen.getByTestId("linked-alias").textContent).toBe("a");
+  });
+
+  it("supports short aliases for core reactive primitives", async () => {
+    const events: string[] = [];
+
+    const App = component(() => {
+      const [value, setValue] = signal(1);
+      const doubled = memo(() => value() * 2);
+
+      effect(() => {
+        events.push(`e:${doubled()}`);
+      });
+
+      computed(() => {
+        events.push(`c:${value()}`);
+      });
+
+      mount(() => {
+        events.push("m");
+      });
+
+      return () => (
+        <button data-testid="alias-inc" onClick={() => setValue((n) => n + 1)}>
+          {doubled()}
+        </button>
+      );
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(events).toContain("m");
+      expect(events).toContain("e:2");
+      expect(events).toContain("c:1");
+    });
+
+    fireEvent.click(screen.getByTestId("alias-inc"));
+
+    await waitFor(() => {
+      expect(events).toContain("e:4");
+      expect(events).toContain("c:2");
+    });
+  });
+
+  it("adapts Solid-compatible signal tuples", () => {
+    let value = 1;
+    const solidLike = [
+      () => value,
+      (next: number | ((prev: number) => number)) => {
+        value = typeof next === "function" ? (next as (prev: number) => number)(value) : next;
+      },
+    ] as const;
+
+    const [get, set] = fromSolidSignal(solidLike);
+    expect(get()).toBe(1);
+    expect(set((n) => n + 2)).toBe(3);
+    expect(get()).toBe(3);
+
+    const [get2, set2] = fromSignal(solidLike);
+    set2(5);
+    expect(get2()).toBe(5);
+  });
+
+  it("adapts library signals to Solid-compatible tuples", () => {
+    const App = component(() => {
+      const pair = createSignal(2);
+      const [get, set] = toSolidSignal(pair);
+      const [getAlias, setAlias] = toSignal(pair);
+
+      return () => (
+        <div>
+          <button data-testid="solid-set" onClick={() => set((n) => n + 1)}>
+            set
+          </button>
+          <button data-testid="solid-set-alias" onClick={() => setAlias((n) => n + 2)}>
+            set2
+          </button>
+          <span data-testid="solid-value">{get()}</span>
+          <span data-testid="solid-value-alias">{getAlias()}</span>
+        </div>
+      );
+    });
+
+    render(<App />);
+    expect(screen.getByTestId("solid-value").textContent).toBe("2");
+
+    fireEvent.click(screen.getByTestId("solid-set"));
+    expect(screen.getByTestId("solid-value").textContent).toBe("3");
+
+    fireEvent.click(screen.getByTestId("solid-set-alias"));
+    expect(screen.getByTestId("solid-value-alias").textContent).toBe("5");
   });
 
   it("throws when reactive primitives are called outside component scope", () => {

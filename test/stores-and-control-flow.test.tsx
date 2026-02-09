@@ -17,7 +17,12 @@ import {
   createReactiveArray,
   createSignal,
   createStore,
+  arrayProjection,
   lazy,
+  mutable,
+  projection,
+  sotre,
+  store,
 } from "../src/index";
 
 afterEach(() => {
@@ -286,5 +291,59 @@ describe("stores, projections, and control flow", () => {
     await waitFor(() => {
       expect(screen.getByTestId("lazy-value").textContent).toBe("loaded");
     });
+  });
+
+  it("supports store and projection aliases", () => {
+    const App = component(() => {
+      const [state, setState] = store({ count: 1 });
+      const [state2] = sotre({ value: 2 });
+      const local = mutable({ enabled: true });
+      const [items, setItems] = createSignal([{ id: "a", n: 1 }]);
+
+      const list = arrayProjection(items, {
+        key: (item) => item.id,
+        map: (item) => ({ ...item }),
+        update: (target, item) => {
+          target.n = item.n;
+        },
+      });
+
+      const proj = projection(
+        () => state.count,
+        (value) => ({ doubled: value * 2 }),
+        (target, value) => {
+          target.doubled = value * 2;
+        },
+      );
+
+      return () => (
+        <div>
+          <button
+            data-testid="alias-update"
+            onClick={() => {
+              setState((prev) => ({ count: prev.count + 1 }));
+              local.enabled = !local.enabled;
+              setItems([{ id: "a", n: 5 }]);
+            }}
+          >
+            update
+          </button>
+          <span data-testid="alias-count">{state.count}</span>
+          <span data-testid="alias-value">{state2.value}</span>
+          <span data-testid="alias-enabled">{String(local.enabled)}</span>
+          <span data-testid="alias-list">{list[0]?.n}</span>
+          <span data-testid="alias-proj">{proj.doubled}</span>
+        </div>
+      );
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByTestId("alias-update"));
+
+    expect(screen.getByTestId("alias-count").textContent).toBe("2");
+    expect(screen.getByTestId("alias-value").textContent).toBe("2");
+    expect(screen.getByTestId("alias-enabled").textContent).toBe("false");
+    expect(screen.getByTestId("alias-list").textContent).toBe("5");
+    expect(screen.getByTestId("alias-proj").textContent).toBe("4");
   });
 });

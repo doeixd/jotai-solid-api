@@ -391,6 +391,26 @@ export type Accessor<T> = () => T;
 export type Setter<T> = (nextValue: T | ((prev: T) => T)) => T;
 
 /**
+ * Setter shape compatible with Solid's `createSignal` setter.
+ *
+ * @example
+ * ```ts
+ * const set: SolidSetter<number> = (next) => next
+ * ```
+ */
+export type SolidSetter<T> = (nextValue: T | ((prev: T) => T)) => unknown;
+
+/**
+ * Tuple shape compatible with Solid's signal pair.
+ *
+ * @example
+ * ```ts
+ * const pair: SolidSignal<number> = [() => 1, (next) => next]
+ * ```
+ */
+export type SolidSignal<T> = readonly [Accessor<T>, SolidSetter<T>];
+
+/**
  * Async resource lifecycle states.
  *
  * @example
@@ -467,6 +487,68 @@ export function createSignal<T>(initialValue: T): [Accessor<T>, Setter<T>] {
 }
 
 /**
+ * Alias for {@link createSignal}.
+ *
+ * @example
+ * ```ts
+ * const [count, setCount] = signal(0)
+ * ```
+ */
+export const signal = createSignal;
+
+/**
+ * Adapts a Solid-compatible signal pair into this library's strict setter shape.
+ *
+ * @param solidSignal Signal tuple `[get, set]` from Solid or compatible runtimes.
+ * @returns Tuple `[get, set]` where `set` returns the current value.
+ *
+ * @example
+ * ```ts
+ * const [count, setCount] = fromSolidSignal(otherSignal)
+ * setCount((n) => n + 1)
+ * ```
+ */
+export function fromSolidSignal<T>(solidSignal: SolidSignal<T>): [Accessor<T>, Setter<T>] {
+  const [get, set] = solidSignal;
+  const normalizedSet: Setter<T> = (nextValue) => {
+    set(nextValue);
+    return get();
+  };
+  return [get, normalizedSet];
+}
+
+/**
+ * Adapts this library's signal pair to a Solid-compatible tuple shape.
+ *
+ * @param reactiveSignal Tuple `[get, set]` from this library.
+ * @returns Solid-compatible signal tuple.
+ *
+ * @example
+ * ```ts
+ * const solidPair = toSolidSignal(createSignal(0))
+ * ```
+ */
+export function toSolidSignal<T>(
+  reactiveSignal: readonly [Accessor<T>, Setter<T>],
+): SolidSignal<T> {
+  const [get, set] = reactiveSignal;
+  const solidSetter: SolidSetter<T> = (nextValue) => {
+    set(nextValue);
+  };
+  return [get, solidSetter] as const;
+}
+
+/**
+ * Alias for {@link fromSolidSignal}.
+ */
+export const fromSignal = fromSolidSignal;
+
+/**
+ * Alias for {@link toSolidSignal}.
+ */
+export const toSignal = toSolidSignal;
+
+/**
  * Creates a cached derived accessor.
  *
  * @param compute Derivation function. Reads inside this function become dependencies.
@@ -483,6 +565,16 @@ export function createMemo<T>(compute: () => T): Accessor<T> {
   scope.register(source);
   return () => source.get();
 }
+
+/**
+ * Alias for {@link createMemo}.
+ *
+ * @example
+ * ```ts
+ * const total = memo(() => items().length)
+ * ```
+ */
+export const memo = createMemo;
 
 /**
  * Registers an effect that runs after React commit.
@@ -506,6 +598,16 @@ export function createEffect(effect: () => void | Cleanup): void {
 }
 
 /**
+ * Alias for {@link createEffect}.
+ *
+ * @example
+ * ```ts
+ * effect(() => console.log(count()))
+ * ```
+ */
+export const effect = createEffect;
+
+/**
  * Registers an effect that runs in layout phase.
  *
  * @param effect Layout effect callback. Return a cleanup function to dispose previous run resources.
@@ -527,6 +629,16 @@ export function createLayoutEffect(effect: () => void | Cleanup): void {
 }
 
 /**
+ * Alias for {@link createLayoutEffect}.
+ *
+ * @example
+ * ```ts
+ * layoutEffect(() => measure())
+ * ```
+ */
+export const layoutEffect = createLayoutEffect;
+
+/**
  * Creates a reactive computation for side effects.
  * Alias of {@link createEffect} for Solid-style API compatibility.
  *
@@ -542,6 +654,16 @@ export function createLayoutEffect(effect: () => void | Cleanup): void {
 export function createComputed(compute: () => void | Cleanup): void {
   createEffect(compute);
 }
+
+/**
+ * Alias for {@link createComputed}.
+ *
+ * @example
+ * ```ts
+ * computed(() => sync(count()))
+ * ```
+ */
+export const computed = createComputed;
 
 /**
  * Runs a callback once on mount and disposes it on unmount if cleanup is returned.
@@ -564,6 +686,16 @@ export function onMount(callback: () => void | Cleanup): void {
     }
   });
 }
+
+/**
+ * Alias for {@link onMount}.
+ *
+ * @example
+ * ```ts
+ * mount(() => console.log("mounted"))
+ * ```
+ */
+export const mount = onMount;
 
 /**
  * Registers cleanup in setup scope or currently running effect.
@@ -828,6 +960,16 @@ export function createResource<T, S>(
 }
 
 /**
+ * Alias for {@link createResource}.
+ *
+ * @example
+ * ```ts
+ * const [user] = resource(() => fetchUser())
+ * ```
+ */
+export const resource = createResource;
+
+/**
  * Shortcut for `createResource(fetcher)[0]`.
  *
  * @param compute Async or sync function that resolves the value.
@@ -846,6 +988,16 @@ export function createAsync<T>(
   const [resource] = createResource(compute, options);
   return resource;
 }
+
+/**
+ * Alias for {@link createAsync}.
+ *
+ * @example
+ * ```ts
+ * const profile = asyncSignal(() => fetchProfile())
+ * ```
+ */
+export const asyncSignal = createAsync;
 
 const promiseState = new WeakMap<PromiseLike<unknown>, {
   status: "pending" | "resolved" | "rejected";
@@ -1155,6 +1307,26 @@ export function createStore<T extends object>(initialValue: T): [T, SetStore<T>]
 }
 
 /**
+ * Alias for {@link createStore}.
+ *
+ * @example
+ * ```ts
+ * const [state, setState] = store({ count: 0 })
+ * ```
+ */
+export const store = createStore;
+
+/**
+ * Typo-friendly alias for {@link createStore}.
+ *
+ * @example
+ * ```ts
+ * const [state, setState] = sotre({ count: 0 })
+ * ```
+ */
+export const sotre = createStore;
+
+/**
  * Creates a mutable reactive object.
  *
  * @param initialValue Initial object state.
@@ -1171,6 +1343,16 @@ export function createMutable<T extends object>(initialValue: T): T {
   const source = new SignalSource(scope.store, initialValue);
   return createReactiveProxy(source, true);
 }
+
+/**
+ * Alias for {@link createMutable}.
+ *
+ * @example
+ * ```ts
+ * const state = mutable({ count: 0 })
+ * ```
+ */
+export const mutable = createMutable;
 
 /**
  * Alias for {@link createMutable}.
@@ -1315,6 +1497,16 @@ export function createArrayProjection<SourceItem, ProjectedItem, Key = unknown>(
 }
 
 /**
+ * Alias for {@link createArrayProjection}.
+ *
+ * @example
+ * ```ts
+ * const rows = arrayProjection(items, { map: (i) => i })
+ * ```
+ */
+export const arrayProjection = createArrayProjection;
+
+/**
  * Writable derived signal state returned by {@link createLinkedSignal}.
  *
  * @example
@@ -1423,6 +1615,16 @@ export function createProjection<Source, Target extends object>(
 }
 
 /**
+ * Alias for {@link createProjection}.
+ *
+ * @example
+ * ```ts
+ * const state = projection(source, (s) => ({ ...s }), (t, s) => Object.assign(t, s))
+ * ```
+ */
+export const projection = createProjection;
+
+/**
  * Re-export of `React.Suspense` for API consistency.
  *
  * @example
@@ -1455,9 +1657,10 @@ export function lazy<Props>(
   });
 }
 
-type SetupFn<Props> = (
-  props: Accessor<Props>,
-) => (() => React.ReactNode) | React.ReactNode;
+type SetupResult = (() => React.ReactNode) | React.ReactNode;
+
+type SetupFn<Props> = (props: Accessor<Readonly<Props>>) => SetupResult;
+type SetupFnNoProps = () => SetupResult;
 
 /**
  * Options for wrapped `component(...)` React components.
@@ -1471,6 +1674,16 @@ export type ComponentOptions<Props> = {
   memo?: boolean | ((prev: Readonly<Props>, next: Readonly<Props>) => boolean);
   displayName?: string;
 };
+
+/**
+ * Public component type returned by {@link component}.
+ *
+ * @example
+ * ```ts
+ * const View: SolidComponent<{ id: string }> = component((props) => () => <p>{props().id}</p>)
+ * ```
+ */
+export type SolidComponent<Props> = React.ComponentType<Props>;
 
 class ComponentInstance<Props> {
   private readonly scope = new Scope();
@@ -1548,10 +1761,30 @@ class ComponentInstance<Props> {
  * })
  * ```
  */
-export function component<Props = Record<string, never>>(
+export function component(
+  setup: SetupFnNoProps,
+  options?: ComponentOptions<Record<string, never>>,
+): SolidComponent<Record<string, never>>;
+export function component<Props>(
   setup: SetupFn<Props>,
+  options?: ComponentOptions<Props>,
+): SolidComponent<Props>;
+/**
+ * Wraps a setup function so Solid-style primitives can be used without custom hooks.
+ *
+ * Supports both setup styles:
+ * - no-props: `component(() => () => <div />)`
+ * - props accessor: `component<{ id: string }>((props) => () => <div>{props().id}</div>)`
+ */
+export function component<Props>(
+  setup: SetupFn<Props> | SetupFnNoProps,
   options: ComponentOptions<Props> = {},
-): React.FC<Props> {
+): SolidComponent<Props> {
+  const normalizedSetup: SetupFn<Props> =
+    setup.length === 0
+      ? () => (setup as SetupFnNoProps)()
+      : (setup as SetupFn<Props>);
+
   const Wrapped: React.FC<Props> = (props: Props) => {
     const [, setTick] = React.useState(0);
     const forceUpdate = React.useCallback(() => {
@@ -1561,7 +1794,7 @@ export function component<Props = Record<string, never>>(
     const instanceRef = React.useRef<ComponentInstance<Props> | null>(null);
 
     if (!instanceRef.current) {
-      instanceRef.current = new ComponentInstance(props, setup, forceUpdate);
+      instanceRef.current = new ComponentInstance(props, normalizedSetup, forceUpdate);
     }
 
     const instance = instanceRef.current;
@@ -1595,6 +1828,16 @@ export function component<Props = Record<string, never>>(
   memoized.displayName = name;
   return memoized;
 }
+
+/**
+ * Alias for {@link component}.
+ *
+ * @example
+ * ```ts
+ * const View = defineComponent(() => <p>Hello</p>)
+ * ```
+ */
+export const defineComponent = component;
 
 /**
  * Utility union type accepted by control-flow primitives.
