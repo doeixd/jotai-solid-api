@@ -106,10 +106,16 @@ class Scope {
   private readonly effectStarters: Array<() => void> = [];
   private layoutStarted: boolean;
   private effectsStarted: boolean;
+  private uniqueIdCounter = 0;
 
   constructor(options: { autoStart?: boolean } = {}) {
     this.layoutStarted = Boolean(options.autoStart);
     this.effectsStarted = Boolean(options.autoStart);
+  }
+
+  nextUniqueId(prefix: string): string {
+    this.uniqueIdCounter += 1;
+    return `${prefix}${this.uniqueIdCounter}`;
   }
 
   register(disposable: { dispose(): void }): void {
@@ -604,6 +610,68 @@ export function createMemo<T>(compute: () => T): Accessor<T> {
 }
 
 /**
+ * Defers propagation of a source accessor value.
+ *
+ * @param source Source accessor to defer.
+ * @param options Optional deferral settings.
+ * @returns Accessor containing the deferred value.
+ *
+ * @example
+ * ```ts
+ * const deferredQuery = createDeferred(query, { timeoutMs: 50 })
+ * ```
+ */
+export function createDeferred<T>(
+  source: Accessor<T>,
+  options: {
+    timeoutMs?: number;
+    equals?: (left: T, right: T) => boolean;
+  } = {},
+): Accessor<T> {
+  const equals = options.equals ?? Object.is;
+  const [deferred, setDeferred] = createSignal(source());
+
+  createEffect(() => {
+    const nextValue = source();
+    if (equals(deferred(), nextValue)) {
+      return;
+    }
+
+    if (options.timeoutMs === undefined || options.timeoutMs <= 0) {
+      queueMicrotask(() => {
+        setDeferred(nextValue);
+      });
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setDeferred(nextValue);
+    }, options.timeoutMs);
+
+    onCleanup(() => {
+      clearTimeout(timer);
+    });
+  });
+
+  return deferred;
+}
+
+/**
+ * Creates a unique id string for the current scope.
+ *
+ * @param prefix Prefix for the generated id.
+ * @returns Unique id string.
+ *
+ * @example
+ * ```ts
+ * const inputId = createUniqueId("field-")
+ * ```
+ */
+export function createUniqueId(prefix = "uid-"): string {
+  return activeScope().nextUniqueId(prefix);
+}
+
+/**
  * Alias for {@link createMemo}.
  *
  * @example
@@ -821,6 +889,62 @@ export function batch<T>(fn: () => T): T {
 }
 
 /**
+ * Dependency helper for effects. Runs `fn` only when provided dependencies change.
+ *
+ * @param deps Dependency accessor or accessor list.
+ * @param fn Callback receiving current dependency values and previous values.
+ * @param options Optional behavior (`defer` skips the first invocation).
+ * @returns Effect callback compatible with `createEffect`.
+ *
+ * @example
+ * ```ts
+ * createEffect(
+ *   on([userId, locale], ([id, nextLocale], prev) => {
+ *     refetchUser(id, nextLocale)
+ *   }, { defer: true }),
+ * )
+ * ```
+ */
+export function on<T>(
+  deps: Accessor<T>,
+  fn: (input: T, prevInput: T | undefined, prevValue: undefined) => void,
+  options?: { defer?: boolean },
+): () => void;
+export function on<T extends readonly unknown[]>(
+  deps: { [K in keyof T]: Accessor<T[K]> },
+  fn: (input: T, prevInput: T | undefined, prevValue: undefined) => void,
+  options?: { defer?: boolean },
+): () => void;
+export function on<T>(
+  deps: Accessor<T> | readonly Accessor<unknown>[],
+  fn: (input: T, prevInput: T | undefined, prevValue: undefined) => void,
+  options: { defer?: boolean } = {},
+): () => void {
+  let initialized = false;
+  let previousInput: T | undefined;
+
+  const readInput = (): T => {
+    if (Array.isArray(deps)) {
+      return deps.map((dep) => dep()) as T;
+    }
+    return (deps as Accessor<T>)();
+  };
+
+  return () => {
+    const input = readInput();
+    if (!initialized) {
+      initialized = true;
+      if (options.defer) {
+        previousInput = input;
+        return;
+      }
+    }
+    fn(input, previousInput, undefined);
+    previousInput = input;
+  };
+}
+
+/**
  * Executes a function without dependency tracking.
  *
  * @param fn Function to execute without capturing dependencies.
@@ -840,6 +964,62 @@ export function untrack<T>(fn: () => T): T {
       collectorStack.push(previous);
     }
   }
+}
+
+/**
+ * Creates a manually armed reaction.
+ *
+ * The returned `track` function subscribes to dependencies read inside `trackFn`.
+ * When any dependency changes, `onInvalidate` runs once and the reaction disarms
+ * until `track(...)` is called again.
+ *
+ * @param onInvalidate Callback invoked when tracked dependencies change.
+ * @returns Track function used to arm the reaction.
+ *
+ * @example
+ * ```ts
+ * const track = createReaction(() => console.log("changed"))
+ * track(() => state.userId)
+ * ```
+ */
+export function createReaction(onInvalidate: () => void): (trackFn: () => unknown) => void {
+  const scope = activeScope();
+
+  let tracker: DependencyTracker | null = null;
+  let armed = false;
+
+  const disposeTracker = (): void => {
+    if (!tracker) {
+      return;
+    }
+    tracker.dispose();
+    tracker = null;
+  };
+
+  const track = (trackFn: () => unknown): void => {
+    armed = true;
+    disposeTracker();
+
+    tracker = new DependencyTracker(() => {
+      if (!armed) {
+        return;
+      }
+      armed = false;
+      disposeTracker();
+      onInvalidate();
+    });
+
+    tracker.collect(trackFn);
+  };
+
+  scope.register({
+    dispose: () => {
+      armed = false;
+      disposeTracker();
+    },
+  });
+
+  return track;
 }
 
 type ResourceFetcher<T, S> =
@@ -1142,6 +1322,82 @@ function shallowClone<T>(value: T): T {
   return value;
 }
 
+function deepClone<T>(value: T): T {
+  if (typeof globalThis.structuredClone === "function") {
+    return globalThis.structuredClone(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => deepClone(item)) as T;
+  }
+
+  if (isObjectLike(value)) {
+    const clone: Record<PropertyKey, unknown> = {};
+    for (const key of Reflect.ownKeys(value)) {
+      clone[key] = deepClone((value as Record<PropertyKey, unknown>)[key]);
+    }
+    return clone as T;
+  }
+
+  return value;
+}
+
+function reconcileValue<T>(
+  previous: T,
+  next: T,
+  options: { merge?: boolean; key?: string | number },
+): T {
+  if (Object.is(previous, next)) {
+    return previous;
+  }
+
+  if (Array.isArray(previous) && Array.isArray(next)) {
+    if (options.key) {
+      const keyField = options.key;
+      const keyed = new Map<unknown, unknown>();
+      for (const item of previous) {
+        if (isObjectLike(item) && keyField in item) {
+          keyed.set((item as Record<PropertyKey, unknown>)[keyField], item);
+        }
+      }
+
+      return next.map((item) => {
+        if (!isObjectLike(item) || !(keyField in item)) {
+          return deepClone(item);
+        }
+
+        const keyValue = (item as Record<PropertyKey, unknown>)[keyField];
+        const existing = keyed.get(keyValue);
+        if (existing && isObjectLike(existing)) {
+          return reconcileValue(existing, item, options);
+        }
+        return deepClone(item);
+      }) as T;
+    }
+
+    return next.map((item, index) => {
+      const previousItem = previous[index] as unknown;
+      return reconcileValue(previousItem, item as unknown, options);
+    }) as T;
+  }
+
+  if (isObjectLike(previous) && isObjectLike(next)) {
+    const out: Record<PropertyKey, unknown> = options.merge
+      ? { ...(previous as Record<PropertyKey, unknown>) }
+      : {};
+
+    for (const key of Reflect.ownKeys(next)) {
+      const previousValue = (previous as Record<PropertyKey, unknown>)[key];
+      const nextValue = (next as Record<PropertyKey, unknown>)[key];
+      out[key] = reconcileValue(previousValue, nextValue, options);
+    }
+
+    return out as T;
+  }
+
+  return deepClone(next);
+}
+
 function getAtPath(root: unknown, path: readonly PathSegment[]): unknown {
   let cursor: unknown = root;
   for (const segment of path) {
@@ -1334,6 +1590,44 @@ function createReactiveProxy<T extends object>(
  * ```
  */
 export type SetStore<T> = (next: T | Partial<T> | ((prev: T) => T | Partial<T>)) => T;
+
+/**
+ * Produces immutable updates using a mutable draft callback.
+ *
+ * @param recipe Draft mutator callback.
+ * @returns Updater function suitable for `setStore` or signal setters.
+ *
+ * @example
+ * ```ts
+ * setStore(produce((draft) => { draft.user.name = "Ada" }))
+ * ```
+ */
+export function produce<T>(recipe: (draft: T) => void): (previous: T) => T {
+  return (previous: T): T => {
+    const draft = deepClone(previous);
+    recipe(draft);
+    return draft;
+  };
+}
+
+/**
+ * Reconciles structural updates while preserving matching nested references.
+ *
+ * @param value Next value to reconcile into current state.
+ * @param options Reconciliation behavior.
+ * @returns Updater function suitable for `setStore` or signal setters.
+ *
+ * @example
+ * ```ts
+ * setStore(reconcile(nextData, { key: "id", merge: true }))
+ * ```
+ */
+export function reconcile<T>(
+  value: T,
+  options: { key?: string | number; merge?: boolean } = {},
+): (previous: T) => T {
+  return (previous: T): T => reconcileValue(previous, value, options);
+}
 
 /**
  * Creates an immutable reactive object store.
@@ -1908,6 +2202,189 @@ export const defineComponent = component;
  * ```
  */
 export type MaybeAccessor<T> = T | Accessor<T>;
+
+type UnionToIntersection<T> =
+  (T extends unknown ? (arg: T) => void : never) extends (arg: infer R) => void
+    ? R
+    : never;
+
+/**
+ * Merges multiple props objects with lazy property resolution.
+ * Later sources take precedence.
+ *
+ * @param sources Props sources to merge.
+ * @returns Merged props proxy.
+ *
+ * @example
+ * ```ts
+ * const props = mergeProps({ a: 1 }, defaults, incoming)
+ * ```
+ */
+export function mergeProps<TSources extends readonly object[]>(
+  ...sources: TSources
+): UnionToIntersection<TSources[number]> {
+  const readSource = (index: number): object => sources[index] ?? {};
+
+  return new Proxy({}, {
+    get(_target, prop) {
+      for (let index = sources.length - 1; index >= 0; index -= 1) {
+        const source = readSource(index) as Record<PropertyKey, unknown>;
+        if (prop in source) {
+          return source[prop];
+        }
+      }
+      return undefined;
+    },
+    has(_target, prop) {
+      for (let index = sources.length - 1; index >= 0; index -= 1) {
+        const source = readSource(index) as Record<PropertyKey, unknown>;
+        if (prop in source) {
+          return true;
+        }
+      }
+      return false;
+    },
+    ownKeys() {
+      const keys = new Set<string | symbol>();
+      for (const source of sources) {
+        for (const key of Reflect.ownKeys(source)) {
+          keys.add(typeof key === "number" ? String(key) : key);
+        }
+      }
+      return [...keys];
+    },
+    getOwnPropertyDescriptor(_target, prop) {
+      return {
+        configurable: true,
+        enumerable: true,
+        get() {
+          for (let index = sources.length - 1; index >= 0; index -= 1) {
+            const source = readSource(index) as Record<PropertyKey, unknown>;
+            if (prop in source) {
+              return source[prop];
+            }
+          }
+          return undefined;
+        },
+      };
+    },
+  }) as UnionToIntersection<TSources[number]>;
+}
+
+type SplitGroups<T extends object, Groups extends readonly (readonly (keyof T)[])[]> = {
+  [I in keyof Groups]: Pick<T, Groups[I][number]>;
+};
+
+/**
+ * Splits props into picked groups plus a remainder object.
+ *
+ * @param props Source props object.
+ * @param groups Key groups to pick.
+ * @returns Tuple of picked groups followed by remainder props.
+ *
+ * @example
+ * ```ts
+ * const [local, others] = splitProps(props, ["id", "name"])
+ * ```
+ */
+export function splitProps<
+  T extends object,
+  Groups extends readonly (readonly (keyof T)[])[],
+>(
+  props: T,
+  ...groups: Groups
+): [...SplitGroups<T, Groups>, Omit<T, Groups[number][number]>] {
+  const picked = groups.map((group) => {
+    const keySet = new Set<PropertyKey>(group as readonly PropertyKey[]);
+    return new Proxy({}, {
+      get(_target, prop) {
+        if (!keySet.has(prop)) {
+          return undefined;
+        }
+        return (props as Record<PropertyKey, unknown>)[prop];
+      },
+      has(_target, prop) {
+        return keySet.has(prop);
+      },
+      ownKeys() {
+        return [...keySet].map((key) => (typeof key === "number" ? String(key) : key));
+      },
+      getOwnPropertyDescriptor(_target, prop) {
+        if (!keySet.has(prop)) {
+          return undefined;
+        }
+        return {
+          configurable: true,
+          enumerable: true,
+          writable: false,
+          value: (props as Record<PropertyKey, unknown>)[prop],
+        };
+      },
+    });
+  });
+
+  const blocked = new Set<PropertyKey>();
+  for (const group of groups) {
+    for (const key of group) {
+      blocked.add(key as PropertyKey);
+    }
+  }
+
+  const rest = new Proxy({}, {
+    get(_target, prop) {
+      if (blocked.has(prop)) {
+        return undefined;
+      }
+      return (props as Record<PropertyKey, unknown>)[prop];
+    },
+    has(_target, prop) {
+      return !blocked.has(prop) && prop in (props as object);
+    },
+    ownKeys() {
+      return Reflect.ownKeys(props)
+        .filter((key) => !blocked.has(key))
+        .map((key) => (typeof key === "number" ? String(key) : key));
+    },
+    getOwnPropertyDescriptor(_target, prop) {
+      if (blocked.has(prop)) {
+        return undefined;
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(props, prop);
+      if (!descriptor) {
+        return undefined;
+      }
+      return {
+        ...descriptor,
+        configurable: true,
+      };
+    },
+  });
+
+  return [...picked, rest] as unknown as [...SplitGroups<T, Groups>, Omit<T, Groups[number][number]>];
+}
+
+/**
+ * Resolves and memoizes children access.
+ *
+ * @param fn Accessor returning children nodes.
+ * @returns Accessor with `toArray()` helper.
+ *
+ * @example
+ * ```ts
+ * const resolved = children(() => props().children)
+ * const list = resolved.toArray()
+ * ```
+ */
+export function children(
+  fn: Accessor<React.ReactNode>,
+): Accessor<React.ReactNode> & { toArray: () => React.ReactNode[] } {
+  const resolved = createMemo(() => fn());
+  const accessor = (() => resolved()) as Accessor<React.ReactNode> & {
+    toArray: () => React.ReactNode[];
+  };
+  accessor.toArray = () => React.Children.toArray(resolved());
+  return accessor;
+}
 
 function readMaybeAccessor<T>(value: MaybeAccessor<T>): T {
   return resolveMaybeAccessor(value);

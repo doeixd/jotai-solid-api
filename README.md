@@ -14,12 +14,16 @@ npm install jotai-solid-api jotai react
 
 - `component(setup, { memo?, displayName? })`
 - `createSignal(initial)`
+- `createDeferred(source, options?)`
+- `createUniqueId(prefix?)`
 - `fromSolidSignal(signal)` / `toSolidSignal(signal)`
 - `fromSignal(signal)` / `toSignal(signal)`
 - `createMemo(compute)`
 - `createEffect(effect)`
 - `createLayoutEffect(effect)`
 - `createComputed(compute)`
+- `createReaction(onInvalidate)`
+- `on(deps, fn, { defer? })`
 - `onMount(callback)`
 - `onCleanup(cleanup)` / `cleanup(cleanup)`
 - `createRoot(init)`
@@ -32,6 +36,8 @@ npm install jotai-solid-api jotai react
 - `createAsync(compute)`
 - `use(accessorOrPromise)`
 - `createStore(initial)` / `setStore(next)`
+- `produce(recipe)`
+- `reconcile(value, options?)`
 - `createMutable(initial)` / `createMutableStore(initial)`
 - `createReactiveArray(initial)` / `createArrayStore(initial)`
 - `createProjection(source, initialize, mutate)`
@@ -40,6 +46,7 @@ npm install jotai-solid-api jotai react
 - `lazy(loader)` / `Suspense`
 - `untrack(fn)`
 - control flow: `Show`, `For`, `Index`, `Switch`, `Match`
+- props helpers: `mergeProps`, `splitProps`, `children`
 
 ### Aliases
 

@@ -22,6 +22,7 @@ import {
   linkedSignal,
   memo,
   mount,
+  on,
   isAccessor,
   onMount,
   onCleanup,
@@ -30,6 +31,7 @@ import {
   toValue,
   toSignal,
   toSolidSignal,
+  createReaction,
   untrack,
   use,
 } from "../src/index";
@@ -576,5 +578,73 @@ describe("reactive primitives", () => {
     expect(resolveMaybeAccessor(2)).toBe(2);
     expect(resolveMaybeAccessor(() => 3)).toBe(3);
     expect(toValue(() => 4)).toBe(4);
+  });
+
+  it("supports on(...) dependency helper with defer option", async () => {
+    const logs: string[] = [];
+
+    const App = component(() => {
+      const [a, setA] = createSignal(1);
+      const [b, setB] = createSignal(2);
+
+      createEffect(
+        on([a, b], ([nextA, nextB], prev) => {
+          logs.push(`${prev ? prev.join(",") : "none"}->${nextA},${nextB}`);
+        }, { defer: true }),
+      );
+
+      return () => (
+        <div>
+          <button data-testid="set-a" onClick={() => setA(3)}>a</button>
+          <button data-testid="set-b" onClick={() => setB(4)}>b</button>
+        </div>
+      );
+    });
+
+    render(<App />);
+    expect(logs).toEqual([]);
+
+    fireEvent.click(screen.getByTestId("set-a"));
+    await waitFor(() => {
+      expect(logs).toContain("1,2->3,2");
+    });
+
+    fireEvent.click(screen.getByTestId("set-b"));
+    await waitFor(() => {
+      expect(logs).toContain("3,2->3,4");
+    });
+  });
+
+  it("supports createReaction manual arming semantics", async () => {
+    const hits: string[] = [];
+
+    const App = component(() => {
+      const [value, setValue] = createSignal(1);
+      const track = createReaction(() => {
+        hits.push("invalidated");
+      });
+
+      return () => (
+        <div>
+          <button data-testid="arm" onClick={() => track(() => value())}>arm</button>
+          <button data-testid="set" onClick={() => setValue((n) => n + 1)}>set</button>
+          <span>{value()}</span>
+        </div>
+      );
+    });
+
+    render(<App />);
+
+    fireEvent.click(screen.getByTestId("set"));
+    expect(hits).toEqual([]);
+
+    fireEvent.click(screen.getByTestId("arm"));
+    fireEvent.click(screen.getByTestId("set"));
+    await waitFor(() => {
+      expect(hits).toEqual(["invalidated"]);
+    });
+
+    fireEvent.click(screen.getByTestId("set"));
+    expect(hits).toEqual(["invalidated"]);
   });
 });
