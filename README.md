@@ -1,3 +1,5 @@
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/doeixd/jotai-solid-api)
+
 # jotai-solid-api
 
 Solid-style reactive primitives on top of `jotai/vanilla`, plus a React component wrapper so app code can stay hook-free.
